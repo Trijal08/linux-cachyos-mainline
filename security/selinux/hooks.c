@@ -3584,10 +3584,13 @@ static int selinux_kernfs_init_security(struct kernfs_node *kn_dir,
 		newsid = tsec->create_sid;
 	} else {
 		u16 secclass = inode_mode_to_security_class(kn->mode);
+		const char *kn_name;
 		struct qstr q;
 
-		q.name = kn->name;
-		q.hash_len = hashlen_string(kn_dir, kn->name);
+		/* kn is fresh, can't be renamed, name goes not away */
+		kn_name = rcu_dereference_check(kn->name, true);
+		q.name = kn_name;
+		q.hash_len = hashlen_string(kn_dir, kn_name);
 
 		rc = security_transition_sid(tsec->sid,
 					     parent_sid, secclass, &q,
@@ -4134,7 +4137,7 @@ static int selinux_kernel_read_file(struct file *file,
 
 	switch (id) {
 	case READING_MODULE:
-		rc = selinux_kernel_module_from_file(contents ? file : NULL);
+		rc = selinux_kernel_module_from_file(file);
 		break;
 	default:
 		break;
@@ -7137,6 +7140,19 @@ static int selinux_uring_cmd(struct io_uring_cmd *ioucmd)
 	return avc_has_perm(current_sid(), isec->sid,
 			    SECCLASS_IO_URING, IO_URING__CMD, &ad);
 }
+
+/**
+ * selinux_uring_allowed - check if io_uring_setup() can be called
+ *
+ * Check to see if the current task is allowed to call io_uring_setup().
+ */
+static int selinux_uring_allowed(void)
+{
+	u32 sid = current_sid();
+
+	return avc_has_perm(sid, sid, SECCLASS_IO_URING, IO_URING__ALLOWED,
+			    NULL);
+}
 #endif /* CONFIG_IO_URING */
 
 static const struct lsm_id selinux_lsmid = {
@@ -7390,6 +7406,7 @@ static struct security_hook_list selinux_hooks[] __ro_after_init = {
 	LSM_HOOK_INIT(uring_override_creds, selinux_uring_override_creds),
 	LSM_HOOK_INIT(uring_sqpoll, selinux_uring_sqpoll),
 	LSM_HOOK_INIT(uring_cmd, selinux_uring_cmd),
+	LSM_HOOK_INIT(uring_allowed, selinux_uring_allowed),
 #endif
 
 	/*

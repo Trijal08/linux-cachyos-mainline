@@ -1895,6 +1895,7 @@ S: Czech Republic
 N: Seth Jennings
 E: sjenning@redhat.com
 D: Creation and maintenance of zswap
+D: Creation and maintenace of the zbud allocator
 
 N: Jeremy Kerr
 D: Maintainer of SPU File System
@@ -3788,6 +3789,7 @@ N: Dan Streetman
 E: ddstreet@ieee.org
 D: Maintenance and development of zswap
 D: Creation and maintenance of the zpool API
+D: Maintenace of the zbud allocator
 
 N: Drew Sullivan
 E: drew@ss.org
@@ -3945,6 +3947,10 @@ S: MIT Room E40-343
 S: 1 Amherst Street
 S: Cambridge, Massachusetts 02139
 S: USA
+
+N: Luben Tuikov
+E: Luben Tuikov <ltuikov89@gmail.com>
+D: Maintainer of the DRM GPU Scheduler
 
 N: Simmule Turner
 E: sturner@tele-tv.com
@@ -4311,6 +4317,7 @@ S: England
 N: Vitaly Wool
 E: vitaly.wool@konsulko.com
 D: Maintenance and development of zswap
+D: Maintenance and development of z3fold
 
 N: Chris Wright
 E: chrisw@sous-sol.org

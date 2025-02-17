@@ -4220,6 +4220,11 @@ static int parse_monitor_flags(struct nlattr *nla, u32 *mntrflags)
 		if (flags[flag])
 			*mntrflags |= (1<<flag);
 
+	/* cooked monitor mode is incompatible with other modes */
+	if (*mntrflags & MONITOR_FLAG_COOK_FRAMES &&
+	    *mntrflags != MONITOR_FLAG_COOK_FRAMES)
+		return -EOPNOTSUPP;
+
 	*mntrflags |= MONITOR_FLAG_CHANGED;
 
 	return 0;
@@ -4244,6 +4249,10 @@ static int nl80211_parse_mon_options(struct cfg80211_registered_device *rdev,
 
 		change = true;
 	}
+
+	/* MONITOR_FLAG_COOK_FRAMES is deprecated, refuse cooperation */
+	if (params->flags & MONITOR_FLAG_COOK_FRAMES)
+		return -EOPNOTSUPP;
 
 	if (params->flags & MONITOR_FLAG_ACTIVE &&
 	    !(rdev->wiphy.features & NL80211_FEATURE_ACTIVE_MONITOR))

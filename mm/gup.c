@@ -1283,6 +1283,9 @@ static int check_vma_flags(struct vm_area_struct *vma, unsigned long gup_flags)
 	if ((gup_flags & FOLL_LONGTERM) && vma_is_fsdax(vma))
 		return -EOPNOTSUPP;
 
+	if ((gup_flags & FOLL_SPLIT_PMD) && is_vm_hugetlb_page(vma))
+		return -EOPNOTSUPP;
+
 	if (vma_is_secretmem(vma))
 		return -EFAULT;
 
@@ -2254,6 +2257,7 @@ EXPORT_SYMBOL(fault_in_readable);
 /**
  * get_dump_page() - pin user page in memory while writing it to core dump
  * @addr: user address
+ * @locked: a pointer to an int denoting whether the mmap sem is held
  *
  * Returns struct page pointer of user page pinned for dump,
  * to be freed afterwards by put_page().
@@ -2266,13 +2270,12 @@ EXPORT_SYMBOL(fault_in_readable);
  * Called without mmap_lock (takes and releases the mmap_lock by itself).
  */
 #ifdef CONFIG_ELF_CORE
-struct page *get_dump_page(unsigned long addr)
+struct page *get_dump_page(unsigned long addr, int *locked)
 {
 	struct page *page;
-	int locked = 0;
 	int ret;
 
-	ret = __get_user_pages_locked(current->mm, addr, 1, &page, &locked,
+	ret = __get_user_pages_locked(current->mm, addr, 1, &page, locked,
 				      FOLL_FORCE | FOLL_DUMP | FOLL_GET);
 	return (ret == 1) ? page : NULL;
 }
@@ -2757,7 +2760,7 @@ EXPORT_SYMBOL(get_user_pages_unlocked);
  *
  *  *) ptes can be read atomically by the architecture.
  *
- *  *) access_ok is sufficient to validate userspace address ranges.
+ *  *) valid user addesses are below TASK_MAX_SIZE
  *
  * The last two assumptions can be relaxed by the addition of helper functions.
  *
@@ -3410,8 +3413,6 @@ static int gup_fast_fallback(unsigned long start, unsigned long nr_pages,
 	if (check_add_overflow(start, len, &end))
 		return -EOVERFLOW;
 	if (end > TASK_SIZE_MAX)
-		return -EFAULT;
-	if (unlikely(!access_ok((void __user *)start, len)))
 		return -EFAULT;
 
 	nr_pinned = gup_fast(start, end, gup_flags, pages);

@@ -581,11 +581,8 @@ xts_crypt(struct skcipher_request *req, xts_encrypt_iv_func encrypt_iv,
 {
 	struct crypto_skcipher *tfm = crypto_skcipher_reqtfm(req);
 	const struct aesni_xts_ctx *ctx = aes_xts_ctx(tfm);
-	const unsigned int cryptlen = req->cryptlen;
-	struct scatterlist *src = req->src;
-	struct scatterlist *dst = req->dst;
 
-	if (unlikely(cryptlen < AES_BLOCK_SIZE))
+	if (unlikely(req->cryptlen < AES_BLOCK_SIZE))
 		return -EINVAL;
 
 	kernel_fpu_begin();
@@ -593,23 +590,16 @@ xts_crypt(struct skcipher_request *req, xts_encrypt_iv_func encrypt_iv,
 
 	/*
 	 * In practice, virtually all XTS plaintexts and ciphertexts are either
-	 * 512 or 4096 bytes, aligned such that they don't span page boundaries.
-	 * To optimize the performance of these cases, and also any other case
-	 * where no page boundary is spanned, the below fast-path handles
-	 * single-page sources and destinations as efficiently as possible.
+	 * 512 or 4096 bytes and do not use multiple scatterlist elements.  To
+	 * optimize the performance of these cases, the below fast-path handles
+	 * single-scatterlist-element messages as efficiently as possible.  The
+	 * code is 64-bit specific, as it assumes no page mapping is needed.
 	 */
-	if (likely(src->length >= cryptlen && dst->length >= cryptlen &&
-		   src->offset + cryptlen <= PAGE_SIZE &&
-		   dst->offset + cryptlen <= PAGE_SIZE)) {
-		struct page *src_page = sg_page(src);
-		struct page *dst_page = sg_page(dst);
-		void *src_virt = kmap_local_page(src_page) + src->offset;
-		void *dst_virt = kmap_local_page(dst_page) + dst->offset;
-
-		(*crypt_func)(&ctx->crypt_ctx, src_virt, dst_virt, cryptlen,
-			      req->iv);
-		kunmap_local(dst_virt);
-		kunmap_local(src_virt);
+	if (IS_ENABLED(CONFIG_X86_64) &&
+	    likely(req->src->length >= req->cryptlen &&
+		   req->dst->length >= req->cryptlen)) {
+		(*crypt_func)(&ctx->crypt_ctx, sg_virt(req->src),
+			      sg_virt(req->dst), req->cryptlen, req->iv);
 		kernel_fpu_end();
 		return 0;
 	}
@@ -1536,26 +1526,6 @@ DEFINE_GCM_ALGS(vaes_avx10_512, FLAG_AVX10_512,
 		AES_GCM_KEY_AVX10_SIZE, 800);
 #endif /* CONFIG_AS_VAES && CONFIG_AS_VPCLMULQDQ */
 
-/*
- * This is a list of CPU models that are known to suffer from downclocking when
- * zmm registers (512-bit vectors) are used.  On these CPUs, the AES mode
- * implementations with zmm registers won't be used by default.  Implementations
- * with ymm registers (256-bit vectors) will be used by default instead.
- */
-static const struct x86_cpu_id zmm_exclusion_list[] = {
-	X86_MATCH_VFM(INTEL_SKYLAKE_X,		0),
-	X86_MATCH_VFM(INTEL_ICELAKE_X,		0),
-	X86_MATCH_VFM(INTEL_ICELAKE_D,		0),
-	X86_MATCH_VFM(INTEL_ICELAKE,		0),
-	X86_MATCH_VFM(INTEL_ICELAKE_L,		0),
-	X86_MATCH_VFM(INTEL_ICELAKE_NNPI,	0),
-	X86_MATCH_VFM(INTEL_TIGERLAKE_L,	0),
-	X86_MATCH_VFM(INTEL_TIGERLAKE,		0),
-	/* Allow Rocket Lake and later, and Sapphire Rapids and later. */
-	/* Also allow AMD CPUs (starting with Zen 4, the first with AVX-512). */
-	{},
-};
-
 static int __init register_avx_algs(void)
 {
 	int err;
@@ -1600,7 +1570,7 @@ static int __init register_avx_algs(void)
 	if (err)
 		return err;
 
-	if (x86_match_cpu(zmm_exclusion_list)) {
+	if (boot_cpu_has(X86_FEATURE_PREFER_YMM)) {
 		int i;
 
 		aes_xts_alg_vaes_avx10_512.base.cra_priority = 1;
